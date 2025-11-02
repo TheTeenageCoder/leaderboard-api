@@ -72,21 +72,29 @@ def submit_score():
     info = request.get_json()
 
     username = info.get('username')
-    level = str(info.get('level'))  # store as string
+    level = str(info.get('level'))  # always store as string
     score = info.get('score')
 
     if not username or level is None or score is None:
         return jsonify({"success": False, "message": "Missing data"}), 400
 
-    if username not in data["users"]:
+    if username not in data:
         return jsonify({"success": False, "message": "User not found"}), 404
 
-    user = data["users"][username]
-    user["levels"][level] = score
-    user["total_score"] = sum(user["levels"].values())
-    save_data(data)
+    user = data[username]
 
-    return jsonify({"success": True, "message": "Score submitted"}), 200
+    # ✅ Only accept the score if it's higher than the existing one
+    prev_score = user['levels'].get(level, 0)
+    if score > prev_score:
+        user['levels'][level] = score
+        # Recalculate total (sum of all levels)
+        user['total_score'] = sum(user['levels'].values())
+        data[username] = user
+        save_data(data)
+        return jsonify({"success": True, "message": f"Score updated: {prev_score} → {score}"}), 200
+    else:
+        return jsonify({"success": False, "message": f"Score {score} not higher than current {prev_score}"}), 400
+
 
 
 @app.route('/leaderboard', methods=['GET'])
