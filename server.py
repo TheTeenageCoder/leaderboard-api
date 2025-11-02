@@ -129,6 +129,37 @@ def get_user(username):
         "total_score": user.get('total_score', 0)
     }), 200
 
+@app.route("/remove_user", methods=["DELETE"])
+def remove_user():
+    data = load_data()
+    content = request.get_json()
+
+    username = content.get("username")
+    password = content.get("password")
+
+    if not username or not password:
+        return jsonify({"success": False, "message": "Username and password required"}), 400
+
+    if username not in data["users"]:
+        return jsonify({"success": False, "message": "User not found"}), 404
+
+    # Check password
+    if data["users"][username]["password"] != password:
+        return jsonify({"success": False, "message": "Incorrect password"}), 401
+
+    # Remove user and their scores
+    del data["users"][username]
+
+    # Remove any leaderboard entries for this user
+    for level in list(data["scores"].keys()):
+        data["scores"][level] = [
+            s for s in data["scores"][level] if s["username"] != username
+        ]
+
+    save_data(data)
+    return jsonify({"success": True, "message": f"User '{username}' removed successfully"})
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)
