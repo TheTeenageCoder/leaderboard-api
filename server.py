@@ -10,14 +10,17 @@ DATA_FILE = 'data.json'
 # Helper Functions
 # -------------------------------------------------------------------
 def load_data():
-    if not os.path.exists("data.json") or os.path.getsize("data.json") == 0:
-        # Create an empty default structure
+    if not os.path.exists(DATA_FILE) or os.path.getsize(DATA_FILE) == 0:
         data = {"users": {}, "scores": {}}
-        with open("data.json", "w") as f:
-            json.dump(data, f)
+        save_data(data)
         return data
-    with open("data.json", "r") as f:
-        return json.load(f)
+    with open(DATA_FILE, 'r') as f:
+        data = json.load(f)
+    if "users" not in data:
+        data["users"] = {}
+    if "scores" not in data:
+        data["scores"] = {}
+    return data
 
 def save_data(data):
     with open(DATA_FILE, 'w') as f:
@@ -34,10 +37,13 @@ def register():
     username = info.get('username')
     password = info.get('password')
 
-    if username in data:
+    if not username or not password:
+        return jsonify({"success": False, "message": "Username and password required"}), 400
+
+    if username in data["users"]:
         return jsonify({"success": False, "message": "Username already exists"}), 400
 
-    data[username] = {
+    data["users"][username] = {
         "password": password,
         "levels": {},
         "total_score": 0
@@ -53,7 +59,7 @@ def login():
     username = info.get('username')
     password = info.get('password')
 
-    user = data.get(username)
+    user = data["users"].get(username)
     if not user or user['password'] != password:
         return jsonify({"success": False, "message": "Invalid credentials"}), 401
 
@@ -66,22 +72,18 @@ def submit_score():
     info = request.get_json()
 
     username = info.get('username')
-    level = str(info.get('level'))  # always store as string
+    level = str(info.get('level'))  # store as string
     score = info.get('score')
 
     if not username or level is None or score is None:
         return jsonify({"success": False, "message": "Missing data"}), 400
 
-    if username not in data:
+    if username not in data["users"]:
         return jsonify({"success": False, "message": "User not found"}), 404
 
-    user = data[username]
-    user['levels'][level] = score
-
-    # Recalculate total (sum of all levels)
-    user['total_score'] = sum(user['levels'].values())
-
-    data[username] = user
+    user = data["users"][username]
+    user["levels"][level] = score
+    user["total_score"] = sum(user["levels"].values())
     save_data(data)
 
     return jsonify({"success": True, "message": "Score submitted"}), 200
@@ -90,13 +92,11 @@ def submit_score():
 @app.route('/leaderboard', methods=['GET'])
 def leaderboard_total():
     data = load_data()
-
     leaderboard = [
-        {"username": user, "total_score": info.get('total_score', 0)}
-        for user, info in data.items()
+        {"username": u, "total_score": info.get('total_score', 0)}
+        for u, info in data["users"].items()
     ]
-
-    leaderboard.sort(key=lambda x: x['total_score'], reverse=True)
+    leaderboard.sort(key=lambda x: x["total_score"], reverse=True)
     return jsonify(leaderboard), 200
 
 
@@ -104,14 +104,12 @@ def leaderboard_total():
 def leaderboard_level(level):
     data = load_data()
     level = str(level)
-
     leaderboard = []
-    for user, info in data.items():
-        score = info['levels'].get(level)
+    for u, info in data["users"].items():
+        score = info["levels"].get(level)
         if score is not None:
-            leaderboard.append({"username": user, "score": score})
-
-    leaderboard.sort(key=lambda x: x['score'], reverse=True)
+            leaderboard.append({"username": u, "score": score})
+    leaderboard.sort(key=lambda x: x["score"], reverse=True)
     return jsonify(leaderboard), 200
 
 
@@ -119,15 +117,16 @@ def leaderboard_level(level):
 def get_user(username):
     data = load_data()
 
-    if username not in data:
+    if username not in data["users"]:
         return jsonify({"success": False, "message": "User not found"}), 404
 
-    user = data[username]
+    user = data["users"][username]
     return jsonify({
         "username": username,
-        "levels": user.get('levels', {}),
-        "total_score": user.get('total_score', 0)
+        "levels": user.get("levels", {}),
+        "total_score": user.get("total_score", 0)
     }), 200
+
 
 @app.route("/remove_user", methods=["DELETE"])
 def remove_user():
@@ -143,22 +142,25 @@ def remove_user():
     if username not in data["users"]:
         return jsonify({"success": False, "message": "User not found"}), 404
 
-    # Check password
     if data["users"][username]["password"] != password:
         return jsonify({"success": False, "message": "Incorrect password"}), 401
 
-    # Remove user and their scores
     del data["users"][username]
-
-    # Remove any leaderboard entries for this user
-    for level in list(data["scores"].keys()):
-        data["scores"][level] = [
-            s for s in data["scores"][level] if s["username"] != username
-        ]
-
     save_data(data)
     return jsonify({"success": True, "message": f"User '{username}' removed successfully"})
 
+
+@app.route("/reset_data", methods=["POST"])
+def reset_data():
+    content = request.get_json() or {}
+    secret = content.get("secret")
+
+    if secret != "admin123":
+        return jsonify({"success": False, "message": "Unauthorized"}), 403
+
+    data = {"users": {}, "scores": {}}
+    save_data(data)
+    return jsonify({"success": True, "message": "Data reset successfully"})
 
 
 if __name__ == '__main__':
