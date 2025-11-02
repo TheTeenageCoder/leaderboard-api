@@ -10,9 +10,13 @@ DATA_FILE = 'data.json'
 # Helper Functions
 # -------------------------------------------------------------------
 def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    with open(DATA_FILE, 'r') as f:
+    if not os.path.exists("data.json") or os.path.getsize("data.json") == 0:
+        # Create an empty default structure
+        data = {"users": {}, "scores": {}}
+        with open("data.json", "w") as f:
+            json.dump(data, f)
+        return data
+    with open("data.json", "r") as f:
         return json.load(f)
 
 def save_data(data):
